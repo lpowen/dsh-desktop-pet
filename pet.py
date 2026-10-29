@@ -508,7 +508,13 @@ class Pet:
             pass
 
     def route_key(self, e):
-        """焦点跑到 Toplevel 上时的兜底输入。"""
+        """兜底输入：只在焦点不在输入框时接管，否则交给 Entry 自己处理（否则会插入两次）。"""
+        try:
+            if self.root.focus_get() is self.chat_entry:
+                return None
+        except tk.TclError:
+            pass
+
         if e.char and e.char.isprintable():
             self.chat_entry.insert("end", e.char)
             return "break"
@@ -713,6 +719,14 @@ def main():
     if "--selftest-hide" in sys.argv:
         root.after(3000, pet.hide_pet)
         root.after(5000, pet.toggle_hide)   # 走和热键同一条恢复路径
+    if "--selftest-type" in sys.argv:
+        def type_test():
+            pet.focus_entry()
+            for ch in "abc":
+                pet.chat_entry.event_generate("<KeyPress>", keysym=ch)
+                pet.root.update()
+            root.after(250, lambda: log(f"typed={pet.chat_entry.get()!r} len={len(pet.chat_entry.get())}"))
+        root.after(3600, type_test)
     if "--selftest-send" in sys.argv:
         idx = sys.argv.index("--selftest-send")
         text = sys.argv[idx + 1] if idx + 1 < len(sys.argv) else "测试一下"
