@@ -1,10 +1,10 @@
 {
-  "name": "哦鲸鲸",
+  "name": "小助理",
   "brainPort": 4399,
   "brainUrl": "http://127.0.0.1:4399",
   "profile": "qq",
-  "dshCmd": "D:\\Deepseek\\resources\\runtime\\cli\\bin\\dsh.cmd",
-  "workspace": "C:\\Users\\37301\\Documents\\deepseek-harness\\default-workspace\\qq-bot\\sandbox",
+  "dshCmd": "C:\\path\\to\\dsh.cmd",
+  "workspace": "C:\\path\\to\\your\\workspace",
   "stateDir": "state",
   "timeZone": "Asia/Shanghai",
   "activeHours": [
@@ -22,10 +22,11 @@
   ],
   "proactive": true,
   "bubbleMs": 9000,
+  "autoShowMinutes": 10,
   "scale": 1,
   "startX": 1180,
   "startY": 560,
-  "character": "reimu_cylune",
+  "character": "reimu",
   "idleFaces": [
     "idle",
     "idle",
@@ -33,5 +34,5 @@
     "happy",
     "sleepy"
   ],
-  "ownerQQ": "373017812"
+  "ownerQQ": ""
 }
