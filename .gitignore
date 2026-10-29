@@ -1,0 +1,16 @@
+# 密钥与个人数据，不要提交
+config.json
+state/
+logs/
+*.pid
+*.lock
+
+# 第三方素材（版权不属于本项目，见 README）
+characters/patchouli/
+characters/reimu_cylune/
+
+# 运行时产物
+__pycache__/
+*.pyc
+.DS_Store
+Thumbs.db
