@@ -25,6 +25,8 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 with open(os.path.join(HERE, "config.json"), encoding="utf-8") as f:
     CFG = json.load(f)
 
+from quiet import is_quiet, quiet_label
+
 KEY = "#ff00fe"           # 抠图色，和 make_sprites.py 里一致
 ASSETS = os.path.join(HERE, "assets")
 CHAR_ROOT = os.path.join(HERE, "characters")
@@ -123,6 +125,8 @@ class Pet:
         self.chat_entry = None
         self.bubble = None
         self.bubble_job = None
+        self.sleeping = False
+        self.manualAwakeUntil = 0
         self._restore_job = None
         self._last_hotkey = 0
         self.memory_win = None
@@ -165,6 +169,7 @@ class Pet:
         self.bind_idle_anim()
         self.root.after(300, self.bob_loop)
         self.root.after(400, self.hotkey_loop)
+        self.root.after(900, self.check_quiet_loop)
         self.root.after(150, lambda: raise_window(self.root))
         self.root.after(600, self.drain_inbox)
         self.root.after(1200, self.keep_on_top)
@@ -283,6 +288,7 @@ class Pet:
         m.add_command(label="换个位置", command=self.wander)
         m.add_command(label="换个形象", command=self.switch_character)
         m.add_command(label="隐藏 / 显示（Ctrl+Alt+P 恢复）", command=self.toggle_hide)
+        m.add_command(label="睡觉 / 起床", command=self.toggle_sleep)
         m.add_command(label="退出", command=self.quit)
         try:
             m.tk_popup(e.x_root, e.y_root)
@@ -348,6 +354,60 @@ class Pet:
             pass
         self.root.destroy()
 
+    # ---------------------------------------------------------------- 睡眠
+
+    def apply_sleep(self, on):
+        on = bool(on)
+        if on == self.sleeping:
+            return
+        self.sleeping = on
+        if on:
+            self.set_face("sleepy")
+            try:
+                self.root.attributes("-alpha", 0.82)
+            except tk.TclError:
+                pass
+            if self.bubble is not None:
+                try:
+                    self.bubble.destroy()
+                except tk.TclError:
+                    pass
+                self.bubble = None
+            if self.chat is not None:
+                try:
+                    self.chat.withdraw()
+                except tk.TclError:
+                    pass
+            log(f"pet 睡着（{quiet_label(CFG)}）")
+        else:
+            try:
+                self.root.attributes("-alpha", 1.0)
+            except tk.TclError:
+                pass
+            self.set_face("idle")
+            log("pet 醒了")
+
+    def check_quiet_loop(self):
+        """每分钟看一次到没到静默时段；手动「起床」后 30 分钟内不再压回去。"""
+        try:
+            want = is_quiet(CFG)
+            if want and self.manualAwakeUntil > time.time():
+                want = False
+            self.apply_sleep(want)
+        except Exception as e:
+            log(f"quiet check error: {e}")
+        self.root.after(60000, self.check_quiet_loop)
+
+    def toggle_sleep(self):
+        if self.sleeping:
+            self.manualAwakeUntil = time.time() + 1800
+            self.apply_sleep(False)
+            self.say("唔…我醒啦（30 分钟内不会再睡）")
+        else:
+            self.manualAwakeUntil = 0
+            self.apply_sleep(True)
+            self.say("好，那我先睡一会儿，晚安～")
+
     # ---------------------------------------------------------------- 表情
 
     def set_face(self, name, hold_ms=None, then="idle"):
@@ -363,7 +423,7 @@ class Pet:
                  if f in self.frames]
 
         def loop():
-            if not self.busy:
+            if not self.busy and not self.sleeping:
                 face = random.choice(faces) if faces else "idle"
                 hold = 150 if face == "blink" else random.randint(900, 1800)
                 self.set_face(face, hold_ms=hold, then="idle")
@@ -371,8 +431,8 @@ class Pet:
         self.root.after(2000, loop)
 
     def bob_loop(self):
-        """静态立绘的呼吸感：整体上下浮动几像素。"""
-        if not self.busy:
+        """静态立绘的呼吸感：整体上下浮动几像素。睡着时不浮动。"""
+        if not self.busy and not self.sleeping:
             self._bob = 0 if getattr(self, "_bob", -3) == -3 else -3
             try:
                 self.canvas.coords(self.sprite, 0, self._bob)
@@ -427,6 +487,9 @@ class Pet:
     # ---------------------------------------------------------------- 聊天窗
 
     def open_chat(self):
+        if self.sleeping:
+            self.say(f"zZz…（{quiet_label(CFG)} 是我睡觉的时间，明早再来找我吧）")
+            return
         if self.chat is not None and self.chat.winfo_exists():
             self.chat.deiconify()
             self.chat.lift()
@@ -727,6 +790,12 @@ def main():
                 pet.root.update()
             root.after(250, lambda: log(f"typed={pet.chat_entry.get()!r} len={len(pet.chat_entry.get())}"))
         root.after(3600, type_test)
+    if "--selftest-sleep" in sys.argv:
+        def sleep_test():
+            pet.apply_sleep(False)
+            log("selftest: 已强制醒来")
+            root.after(2500, lambda: (pet.apply_sleep(True), log("selftest: 已强制睡着")))
+        root.after(4000, sleep_test)
     if "--selftest-send" in sys.argv:
         idx = sys.argv.index("--selftest-send")
         text = sys.argv[idx + 1] if idx + 1 < len(sys.argv) else "测试一下"
