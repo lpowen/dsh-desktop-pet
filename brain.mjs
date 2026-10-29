@@ -21,6 +21,7 @@ import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { MemoryStore, estimateTokens } from './memory.mjs';
+import { isQuiet, quietLabel } from './quiet.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const CFG = JSON.parse(fs.readFileSync(path.join(HERE, 'config.json'), 'utf8'));
@@ -226,6 +227,17 @@ function buildTask({ surface, text, extra, snapshot, continuity, addr }) {
 }
 
 async function chat({ key, text, surface = 'desk', extra = '' }) {
+  // 0. 夜间静默：QQ 渠道的消息直接不处理，一次模型调用都不发
+  const isQQ = key.startsWith('private:') || key.startsWith('group:') || surface === 'qq';
+  if (isQQ && quietNow()) {
+    const now = Date.now();
+    if (!chat.__quietLog || now - chat.__quietLog > 10 * 60 * 1000) {
+      chat.__quietLog = now;
+      log(`静默时段（${quietLabel(CFG)}），QQ 消息不处理、不调模型`);
+    }
+    return null;
+  }
+
   const interactionId = `turn-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
 
   // 1. 原文先归档（哪怕不建记忆卡）
@@ -292,6 +304,11 @@ function inActiveHours() {
   return h >= start || h < end; // 跨午夜
 }
 
+/** QQ 侧是否处于夜间静默（桌宠桌面对话不受影响，除非你自己也不回） */
+function quietNow() {
+  return isQuiet(Date.now(), CFG);
+}
+
 function scheduleNextThink() {
   const [min, max] = CFG.thinkEveryMinutes || [25, 55];
   const wait = (min + Math.random() * (max - min)) * 60 * 1000;
@@ -343,6 +360,7 @@ async function think(kind = 'idle') {
 function tick() {
   if (CFG.proactive === false) return;
   if (!inActiveHours()) return;
+  if (quietNow()) return;            // 夜间静默：不主动说话、不调模型
   if (Date.now() < status.nextThinkAt) return;
   const idleMin = (CFG.idleMinutesBeforeThink ?? 12);
   if (Date.now() - status.lastActivity < idleMin * 60 * 1000) return;
