@@ -33,6 +33,9 @@ CHAR_ROOT = os.path.join(HERE, "characters")
 STATE = os.path.join(HERE, CFG.get("stateDir", "state"))
 os.makedirs(STATE, exist_ok=True)
 
+# 用户点「退出」时写这个标记；启动器/看门狗看到就不再把桌宠拉起来
+STOPPED_FLAG = os.path.join(STATE, "pet.stopped")
+
 
 def character_dirs():
     """可用形象：默认（assets）+ characters/* 子目录，按 idle.png 判断是否有效。"""
@@ -68,6 +71,20 @@ BG = "#1f1b2e"
 FG = "#eee9fb"
 
 # Win32：把窗口真正提到所有置顶窗口之上（Tk 的 lift() 抢不过 Electron 的置顶窗）
+_MUTEX_HANDLE = None
+
+def already_running():
+    """单实例：命名互斥量。已有桌宠在跑时返回 True（防止看门狗/手动同时拉起两个）。"""
+    global _MUTEX_HANDLE
+    if os.name != "nt":
+        return False
+    try:
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        _MUTEX_HANDLE = kernel32.CreateMutexW(None, False, "Local\\dsh-desktop-pet")
+        return ctypes.get_last_error() == 183   # ERROR_ALREADY_EXISTS
+    except Exception:
+        return False
+
 if os.name == "nt":
     import ctypes
     _user32 = ctypes.windll.user32
@@ -352,6 +369,13 @@ class Pet:
             os.remove(os.path.join(STATE, "pet.pid"))
         except Exception:
             pass
+        # 用户主动退出：留个标记，看门狗/启动器就不会再把桌宠拉起来
+        try:
+            with open(STOPPED_FLAG, "w", encoding="utf-8") as f:
+                f.write(time.strftime("%Y-%m-%d %H:%M:%S"))
+        except Exception:
+            pass
+        log("pet 已退出（不会再被自动拉起，直到下次手动启动）")
         self.root.destroy()
 
     # ---------------------------------------------------------------- 睡眠
@@ -767,6 +791,17 @@ class Pet:
 def main():
     root = tk.Tk()
     root.title(NAME)
+    if already_running():
+        log("已经有一只桌宠在跑了，这个实例直接退出")
+        root.destroy()
+        return
+    # 只要是「手动启动」，就清掉上次的退出标记（看门狗看到标记会一直跳过）
+    try:
+        if os.path.exists(STOPPED_FLAG):
+            os.remove(STOPPED_FLAG)
+            log("已清除上次的退出标记（手动启动）")
+    except Exception:
+        pass
     pet = Pet(root)
     root.protocol("WM_DELETE_WINDOW", pet.quit)
 
@@ -790,6 +825,8 @@ def main():
                 pet.root.update()
             root.after(250, lambda: log(f"typed={pet.chat_entry.get()!r} len={len(pet.chat_entry.get())}"))
         root.after(3600, type_test)
+    if "--selftest-quit" in sys.argv:
+        root.after(3000, pet.quit)
     if "--selftest-sleep" in sys.argv:
         def sleep_test():
             pet.apply_sleep(False)
